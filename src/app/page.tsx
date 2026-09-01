@@ -114,118 +114,139 @@ export default function Home() {
   };
 
   return (
-    <div
-      className="flex min-h-screen flex-col items-center justify-center p-8"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        const file = e.dataTransfer.files?.[0];
-        if (file) {
-          setFileName(file.name);
-          drawImageToCanvas(file);
-        }
-      }}
-    >
-      <Input
-        type="file"
-        accept="image/jpeg,image/png"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
+    <div className="flex min-h-screen flex-col p-8 gap-6 max-w-7xl mx-auto">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-bold text-indigo-600">Watermarker</h1>
+        <p className="text-sm text-slate-500">
+          Add text watermarks to your images.
+        </p>
+      </div>
+      <div
+        className="w-full border-2 border-dashed border-indigo-200 rounded-xl p-8 flex flex-col items-center justify-center gap-2 text-slate-500 bg-white shadow-sm
+  hover:border-indigo-400 transition-colors"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const file = e.dataTransfer.files?.[0];
           if (file) {
             setFileName(file.name);
             drawImageToCanvas(file);
           }
         }}
-      />
-      {fileName && <p className="mt-2 text-sm text-gray-500">{fileName}</p>}
-      <canvas ref={canvasRef} className="mt-4 max-w-full" />
-      <Button
-        onClick={exportImage}
-        className="mt-4"
-        disabled={!canvasRef.current}
       >
-        Download Image
-      </Button>
-      <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
-        <div>
-          <Label>Watermark Label</Label>
-          <Input
-            value={settings.text}
-            onChange={(e) =>
-              setSettings((prev) => ({ ...prev, text: e.target.value }))
+        <p className="text-sm">Drag & drop a JPEG or PNG here, or</p>
+        <Input
+          type="file"
+          accept="image/jpeg,image/png"
+          className="w-fit"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              setFileName(file.name);
+              drawImageToCanvas(file);
             }
-          />
+          }}
+        />
+        {fileName && <p className="text-sm text-gray-400">{fileName}</p>}
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 flex items-start justify-center">
+          <canvas ref={canvasRef} className="max-w-full rounded shadow" />
         </div>
-        <div>
-          <Label>Opacity: {settings.opacity}</Label>
-          <Slider
-            min={0}
-            max={1}
-            step={0.01}
-            value={opacityValue}
-            onValueChange={(val) =>
-              setSettings((prev) => ({ ...prev, opacity: val as number }))
-            }
-          />
-        </div>
-        <div>
-          <Label>Font Size: {settings.fontSize}</Label>
-          <Slider
-            min={12}
-            max={200}
-            step={1}
-            value={fontSizeValue}
-            onValueChange={(val) =>
-              setSettings((prev) => ({ ...prev, fontSize: val as number }))
-            }
-          />
-        </div>
-        <div>
-          <Label>Color</Label>
-          <HexColorPicker
-            color={settings.color}
-            onChange={(val) => setSettings((prev) => ({ ...prev, color: val }))}
-          />
-        </div>
-        <div>
-          <Label>Font Family</Label>
-          <Select
-            value={settings.fontFamily}
-            onValueChange={(val) =>
-              setSettings((prev) => ({ ...prev, fontFamily: val as string }))
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="sans-serif">Sans-Serif</SelectItem>
-              <SelectItem value="serif">Serif</SelectItem>
-              <SelectItem value="monospace">Monospace</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>Mode</Label>
-          <RadioGroup
-            value={settings.mode}
-            onValueChange={(val) =>
-              setSettings((prev) => ({
-                ...prev,
-                mode: val as "single" | "tiled",
-              }))
-            }
-            className="flex gap-4 mt-1"
-          >
-            <Label className="flex items-center gap-2">
-              <RadioGroupItem value="single" />
-              Single
-            </Label>
-            <Label className="flex items-center gap-2">
-              <RadioGroupItem value="tiled" />
-              Tiled
-            </Label>
-          </RadioGroup>
+
+        <div className="flex flex-col gap-4 w-full lg:w-80 bg-white rounded-xl shadow-sm p-6">
+          <div>
+            <Label>Watermark Text</Label>
+            <Input
+              value={settings.text}
+              onChange={(e) =>
+                setSettings((prev) => ({ ...prev, text: e.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <Label>Opacity: {settings.opacity.toFixed(2)}</Label>
+            <Slider
+              min={0}
+              max={1}
+              step={0.01}
+              value={opacityValue}
+              onValueChange={(val) =>
+                setSettings((prev) => ({ ...prev, opacity: val as number }))
+              }
+            />
+          </div>
+          <div>
+            <Label>Font Size: {settings.fontSize}px</Label>
+            <Slider
+              min={12}
+              max={200}
+              step={1}
+              value={fontSizeValue}
+              onValueChange={(val) =>
+                setSettings((prev) => ({ ...prev, fontSize: val as number }))
+              }
+            />
+          </div>
+          <div>
+            <Label>Color</Label>
+            <HexColorPicker
+              color={settings.color}
+              onChange={(val) =>
+                setSettings((prev) => ({ ...prev, color: val }))
+              }
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div>
+            <Label>Font Family</Label>
+            <Select
+              value={settings.fontFamily}
+              onValueChange={(val) =>
+                setSettings((prev) => ({ ...prev, fontFamily: val as string }))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sans-serif">Sans-serif</SelectItem>
+                <SelectItem value="serif">Serif</SelectItem>
+                <SelectItem value="monospace">Monospace</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Mode</Label>
+            <RadioGroup
+              value={settings.mode}
+              onValueChange={(val) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  mode: val as "single" | "tiled",
+                }))
+              }
+              className="flex gap-4 mt-1"
+            >
+              <Label className="flex items-center gap-2">
+                <RadioGroupItem value="single" />
+                Single
+              </Label>
+              <Label className="flex items-center gap-2">
+                <RadioGroupItem value="tiled" />
+                Tiled
+              </Label>
+            </RadioGroup>
+          </div>
+          {fileName && (
+            <Button
+              onClick={exportImage}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              Download Image
+            </Button>
+          )}
         </div>
       </div>
     </div>
