@@ -12,6 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import {
+  defaultSettings,
+  getSinglePosition,
+  getTiledPositions,
+  WatermarkSettings,
+} from "@/lib/watermark";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 
@@ -20,14 +26,8 @@ export default function Home() {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [settings, setSettings] = useState({
-    text: "Confidential",
-    opacity: 0.5,
-    fontSize: 48,
-    color: "#ffffff",
-    fontFamily: "sans-serif",
-    mode: "single" as "single" | "tiled",
-  });
+  const [settings, setSettings] = useState<WatermarkSettings>(defaultSettings);
+
   const opacityValue = useMemo(() => [settings.opacity], [settings.opacity]);
   const fontSizeValue = useMemo(() => [settings.fontSize], [settings.fontSize]);
 
@@ -80,16 +80,18 @@ export default function Home() {
     context.textBaseline = "middle";
 
     if (settings.mode == "single") {
-      context.fillText(settings.text, canvas.width / 2, canvas.height / 2);
+      const { x, y } = getSinglePosition(canvas.width, canvas.height);
+      context.fillText(settings.text, x, y);
     } else {
       const measured = context.measureText(settings.text);
-      const textWidth = measured.width + settings.fontSize * 2;
-      const textHeight = settings.fontSize * 10;
-
-      for (let y = settings.fontSize; y < canvas.height; y += textHeight) {
-        for (let x = measured.width / 2; x < canvas.width; x += textWidth) {
-          context.fillText(settings.text, x, y);
-        }
+      const positions = getTiledPositions(
+        canvas.width,
+        canvas.height,
+        measured.width,
+        settings.fontSize,
+      );
+      for (const { x, y } of positions) {
+        context.fillText(settings.text, x, y);
       }
     }
     context.globalAlpha = 1;
