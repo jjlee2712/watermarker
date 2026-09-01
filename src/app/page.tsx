@@ -31,6 +31,10 @@ export default function Home() {
   const opacityValue = useMemo(() => [settings.opacity], [settings.opacity]);
   const fontSizeValue = useMemo(() => [settings.fontSize], [settings.fontSize]);
 
+  const colorDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
   useEffect(() => {
     drawWatermark();
   }, [settings]);
@@ -193,9 +197,12 @@ export default function Home() {
             <Label>Color</Label>
             <HexColorPicker
               color={settings.color}
-              onChange={(val) =>
-                setSettings((prev) => ({ ...prev, color: val }))
-              }
+              onChange={(val) => {
+                clearTimeout(colorDebounceRef.current);
+                colorDebounceRef.current = setTimeout(() => {
+                  setSettings((prev) => ({ ...prev, color: val }));
+                }, 50);
+              }}
               style={{ width: "100%" }}
             />
           </div>
