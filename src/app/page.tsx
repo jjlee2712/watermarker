@@ -18,6 +18,7 @@ import {
   getTiledPositions,
   WatermarkSettings,
 } from "@/lib/watermark";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 
@@ -30,6 +31,11 @@ export default function Home() {
 
   const opacityValue = useMemo(() => [settings.opacity], [settings.opacity]);
   const fontSizeValue = useMemo(() => [settings.fontSize], [settings.fontSize]);
+
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+  const pdfPageBitMapRef = useRef<ImageBitmap | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
 
   const colorDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -70,13 +76,14 @@ export default function Home() {
 
   const drawWatermark = () => {
     const canvas = canvasRef.current;
-    const img = imgRef.current;
-    if (!canvas || !img) return;
+    const source: CanvasImageSource | null =
+      imgRef.current ?? pdfPageBitMapRef.current;
+    if (!canvas || !source) return;
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
-    context.drawImage(img, 0, 0);
+    context.drawImage(source, 0, 0);
     context.globalAlpha = settings.opacity;
     context.fillStyle = settings.color;
     context.font = `${settings.fontSize}px ${settings.fontFamily}`;
@@ -99,6 +106,40 @@ export default function Home() {
       }
     }
     context.globalAlpha = 1;
+  };
+
+  const renderPdfPage = async (doc: PDFDocumentProxy, pageNum: number) => {
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 2 });
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    await page.render({ canvas, viewport }).promise;
+
+    const bitmap = await createImageBitmap(canvas);
+    pdfPageBitMapRef.current = bitmap;
+    imgRef.current = null;
+
+    drawWatermark();
+  };
+
+  const loadPdf = async (file: File) => {
+    const pdfjsLib = await import("pdfjs-dist");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url,
+    ).toString();
+
+    const arrayBuffer = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    pdfDocRef.current = doc;
+    setTotalPages(doc.numPages);
+    setCurrentPage(1);
+
+    await renderPdfPage(doc, 1);
   };
 
   const exportImage = () => {
@@ -134,20 +175,40 @@ export default function Home() {
           const file = e.dataTransfer.files?.[0];
           if (file) {
             setFileName(file.name);
-            drawImageToCanvas(file);
+            if (file.type === "application/pdf") {
+              imgRef.current = null;
+              pdfDocRef.current = null;
+              pdfPageBitMapRef.current = null;
+              loadPdf(file);
+            } else {
+              imgRef.current = null;
+              pdfDocRef.current = null;
+              pdfPageBitMapRef.current = null;
+              drawImageToCanvas(file);
+            }
           }
         }}
       >
-        <p className="text-sm">Drag & drop a JPEG or PNG here, or</p>
+        <p className="text-sm">Drag & drop a JPEG, PNG or PDF here, or</p>
         <Input
           type="file"
-          accept="image/jpeg,image/png"
+          accept="image/jpeg,image/png,application/pdf"
           className="w-fit"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) {
               setFileName(file.name);
-              drawImageToCanvas(file);
+              if (file.type === "application/pdf") {
+                imgRef.current = null;
+                pdfDocRef.current = null;
+                pdfPageBitMapRef.current = null;
+                loadPdf(file);
+              } else {
+                imgRef.current = null;
+                pdfDocRef.current = null;
+                pdfPageBitMapRef.current = null;
+                drawImageToCanvas(file);
+              }
             }
           }}
         />
@@ -155,8 +216,39 @@ export default function Home() {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6">
-        <div className="flex-1 flex items-start justify-center">
+        <div className="flex-1 flex flex-col items-center justify-start gap-2">
           <canvas ref={canvasRef} className="max-w-full rounded shadow" />
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => {
+                  const p = currentPage - 1;
+                  setCurrentPage(p);
+                  renderPdfPage(pdfDocRef.current!, p);
+                }}
+              >
+                Prev
+              </Button>
+              <span className="text-sm text-slate-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => {
+                  const p = currentPage + 1;
+                  setCurrentPage(p);
+                  renderPdfPage(pdfDocRef.current!, p);
+                }}
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-4 w-full lg:w-80 bg-white rounded-xl shadow-sm p-6">
@@ -246,7 +338,7 @@ export default function Home() {
               </Label>
             </RadioGroup>
           </div>
-          {fileName && (
+          {fileName && !fileName.endsWith(".pdf") && (
             <Button
               onClick={exportImage}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
