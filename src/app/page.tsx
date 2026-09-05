@@ -28,6 +28,8 @@ export default function Home() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [settings, setSettings] = useState<WatermarkSettings>(defaultSettings);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean | null>(null);
 
   const opacityValue = useMemo(() => [settings.opacity], [settings.opacity]);
   const fontSizeValue = useMemo(() => [settings.fontSize], [settings.fontSize]);
@@ -128,21 +130,31 @@ export default function Home() {
   };
 
   const loadPdf = async (file: File) => {
-    const pdfjsLib = await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/build/pdf.worker.min.mjs",
-      import.meta.url,
-    ).toString();
+    setIsLoading(true);
+    setError(null);
+    try {
+      const pdfjsLib = await import("pdfjs-dist");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url,
+      ).toString();
 
-    const arrayBuffer = await file.arrayBuffer();
-    pdfBytesRef.current = arrayBuffer;
-    const doc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
-      .promise;
-    pdfDocRef.current = doc;
-    setTotalPages(doc.numPages);
-    setCurrentPage(1);
+      const arrayBuffer = await file.arrayBuffer();
+      pdfBytesRef.current = arrayBuffer;
+      const doc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
+        .promise;
+      pdfDocRef.current = doc;
+      setTotalPages(doc.numPages);
+      setCurrentPage(1);
 
-    await renderPdfPage(doc, 1);
+      await renderPdfPage(doc, 1);
+    } catch {
+      setError(
+        "Failed to load PDF. The file may be corrupted or password-protected.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const exportImage = () => {
@@ -163,52 +175,38 @@ export default function Home() {
 
   const exportPdf = async () => {
     if (!pdfBytesRef.current) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
 
-    const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+      const fontMap: Record<
+        string,
+        (typeof StandardFonts)[keyof typeof StandardFonts]
+      > = {
+        "sans-serif": StandardFonts.Helvetica,
+        serif: StandardFonts.TimesRoman,
+        monospace: StandardFonts.Courier,
+      };
 
-    const fontMap: Record<
-      string,
-      (typeof StandardFonts)[keyof typeof StandardFonts]
-    > = {
-      "sans-serif": StandardFonts.Helvetica,
-      serif: StandardFonts.TimesRoman,
-      monospace: StandardFonts.Courier,
-    };
+      const pdfDoc = await PDFDocument.load(pdfBytesRef.current);
+      const font = await pdfDoc.embedFont(
+        fontMap[settings.fontFamily] ?? StandardFonts.Helvetica,
+      );
 
-    const pdfDoc = await PDFDocument.load(pdfBytesRef.current);
-    const font = await pdfDoc.embedFont(
-      fontMap[settings.fontFamily] ?? StandardFonts.Helvetica,
-    );
+      const r = parseInt(settings.color.slice(1, 3), 16) / 255;
+      const g = parseInt(settings.color.slice(3, 5), 16) / 255;
+      const b = parseInt(settings.color.slice(5, 7), 16) / 255;
 
-    const r = parseInt(settings.color.slice(1, 3), 16) / 255;
-    const g = parseInt(settings.color.slice(3, 5), 16) / 255;
-    const b = parseInt(settings.color.slice(5, 7), 16) / 255;
+      const pdfFontSize = settings.fontSize / 2;
 
-    const pdfFontSize = settings.fontSize / 2;
+      for (const page of pdfDoc.getPages()) {
+        const { width, height } = page.getSize();
+        const textWidth = font.widthOfTextAtSize(settings.text, pdfFontSize);
+        const textHeight = pdfFontSize;
 
-    for (const page of pdfDoc.getPages()) {
-      const { width, height } = page.getSize();
-      const textWidth = font.widthOfTextAtSize(settings.text, pdfFontSize);
-      const textHeight = pdfFontSize;
-
-      if (settings.mode === "single") {
-        const { x, y } = getSinglePosition(width, height);
-        page.drawText(settings.text, {
-          x: x - textWidth / 2,
-          y: height - y - textHeight / 2,
-          size: pdfFontSize,
-          font,
-          color: rgb(r, g, b),
-          opacity: settings.opacity,
-        });
-      } else {
-        const positions = getTiledPositions(
-          width,
-          height,
-          textHeight,
-          pdfFontSize,
-        );
-        for (const { x, y } of positions) {
+        if (settings.mode === "single") {
+          const { x, y } = getSinglePosition(width, height);
           page.drawText(settings.text, {
             x: x - textWidth / 2,
             y: height - y - textHeight / 2,
@@ -217,19 +215,40 @@ export default function Home() {
             color: rgb(r, g, b),
             opacity: settings.opacity,
           });
+        } else {
+          const positions = getTiledPositions(
+            width,
+            height,
+            textHeight,
+            pdfFontSize,
+          );
+          for (const { x, y } of positions) {
+            page.drawText(settings.text, {
+              x: x - textWidth / 2,
+              y: height - y - textHeight / 2,
+              size: pdfFontSize,
+              font,
+              color: rgb(r, g, b),
+              opacity: settings.opacity,
+            });
+          }
         }
       }
+      const outputBytes = await pdfDoc.save();
+      const blob = new Blob([outputBytes.buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "watermarked.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to export PDF. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
-    const outputBytes = await pdfDoc.save();
-    const blob = new Blob([outputBytes.buffer as ArrayBuffer], {
-      type: "application/pdf",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "watermarked.pdf";
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -248,6 +267,17 @@ export default function Home() {
           e.preventDefault();
           const file = e.dataTransfer.files?.[0];
           if (file) {
+            const supported = ["image/jpeg", "image/png", "application/pdf"];
+            if (!supported.includes(file.type)) {
+              setError(
+                "Unsupported file type. Please upload a JPEG, PNG, or PDF.",
+              );
+              return;
+            }
+            if (file.size > 50 * 1024 * 1024) {
+              setError("File is too large. Maximum size is 50MB.");
+              return;
+            }
             setFileName(file.name);
             if (file.type === "application/pdf") {
               imgRef.current = null;
@@ -271,6 +301,17 @@ export default function Home() {
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) {
+              const supported = ["image/jpeg", "image/png", "application/pdf"];
+              if (!supported.includes(file.type)) {
+                setError(
+                  "Unsupported file type. Please upload a JPEG, PNG, or PDF.",
+                );
+                return;
+              }
+              if (file.size > 50 * 1024 * 1024) {
+                setError("File is too large. Maximum size is 50MB.");
+                return;
+              }
               setFileName(file.name);
               if (file.type === "application/pdf") {
                 imgRef.current = null;
@@ -287,10 +328,12 @@ export default function Home() {
           }}
         />
         {fileName && <p className="text-sm text-gray-400">{fileName}</p>}
+        {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1 flex flex-col items-center justify-start gap-2">
+          {isLoading && <p className="text-sm text-slate-500">Loading...</p>}
           <canvas ref={canvasRef} className="max-w-full rounded shadow" />
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
@@ -334,6 +377,11 @@ export default function Home() {
                 setSettings((prev) => ({ ...prev, text: e.target.value }))
               }
             />
+            {!settings.text.trim() && (
+              <p className="text-xs text-slate-400 mt-1">
+                Enter text to enable download.
+              </p>
+            )}
           </div>
           <div>
             <Label>Opacity: {settings.opacity.toFixed(2)}</Label>
@@ -415,6 +463,7 @@ export default function Home() {
           {fileName && !fileName.endsWith(".pdf") && (
             <Button
               onClick={exportImage}
+              disabled={!settings.text.trim()}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               Download Image
@@ -423,9 +472,10 @@ export default function Home() {
           {fileName && fileName.endsWith(".pdf") && (
             <Button
               onClick={exportPdf}
+              disabled={isLoading || !settings.text.trim()}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
-              Download PDF
+              {isLoading ? "Processing..." : "Download PDF"}
             </Button>
           )}
         </div>
