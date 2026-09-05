@@ -34,6 +34,7 @@ export default function Home() {
 
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   const pdfPageBitMapRef = useRef<ImageBitmap | null>(null);
+  const pdfBytesRef = useRef<ArrayBuffer | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
 
@@ -134,7 +135,9 @@ export default function Home() {
     ).toString();
 
     const arrayBuffer = await file.arrayBuffer();
-    const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    pdfBytesRef.current = arrayBuffer;
+    const doc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
+      .promise;
     pdfDocRef.current = doc;
     setTotalPages(doc.numPages);
     setCurrentPage(1);
@@ -156,6 +159,77 @@ export default function Home() {
     a.href = url;
     a.download = `watermarked.${ext}`;
     a.click();
+  };
+
+  const exportPdf = async () => {
+    if (!pdfBytesRef.current) return;
+
+    const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+
+    const fontMap: Record<
+      string,
+      (typeof StandardFonts)[keyof typeof StandardFonts]
+    > = {
+      "sans-serif": StandardFonts.Helvetica,
+      serif: StandardFonts.TimesRoman,
+      monospace: StandardFonts.Courier,
+    };
+
+    const pdfDoc = await PDFDocument.load(pdfBytesRef.current);
+    const font = await pdfDoc.embedFont(
+      fontMap[settings.fontFamily] ?? StandardFonts.Helvetica,
+    );
+
+    const r = parseInt(settings.color.slice(1, 3), 16) / 255;
+    const g = parseInt(settings.color.slice(3, 5), 16) / 255;
+    const b = parseInt(settings.color.slice(5, 7), 16) / 255;
+
+    const pdfFontSize = settings.fontSize / 2;
+
+    for (const page of pdfDoc.getPages()) {
+      const { width, height } = page.getSize();
+      const textWidth = font.widthOfTextAtSize(settings.text, pdfFontSize);
+      const textHeight = pdfFontSize;
+
+      if (settings.mode === "single") {
+        const { x, y } = getSinglePosition(width, height);
+        page.drawText(settings.text, {
+          x: x - textWidth / 2,
+          y: height - y - textHeight / 2,
+          size: pdfFontSize,
+          font,
+          color: rgb(r, g, b),
+          opacity: settings.opacity,
+        });
+      } else {
+        const positions = getTiledPositions(
+          width,
+          height,
+          textHeight,
+          pdfFontSize,
+        );
+        for (const { x, y } of positions) {
+          page.drawText(settings.text, {
+            x: x - textWidth / 2,
+            y: height - y - textHeight / 2,
+            size: pdfFontSize,
+            font,
+            color: rgb(r, g, b),
+            opacity: settings.opacity,
+          });
+        }
+      }
+    }
+    const outputBytes = await pdfDoc.save();
+    const blob = new Blob([outputBytes.buffer as ArrayBuffer], {
+      type: "application/pdf",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "watermarked.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -344,6 +418,14 @@ export default function Home() {
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
               Download Image
+            </Button>
+          )}
+          {fileName && fileName.endsWith(".pdf") && (
+            <Button
+              onClick={exportPdf}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              Download PDF
             </Button>
           )}
         </div>
